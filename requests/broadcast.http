@@ -1,0 +1,10 @@
+@baseUrl = http://127.0.0.1:8080
+@contentType = application/json
+
+### Send text broadcast to all subscribed numbers
+POST {{baseUrl}}/api/messages/broadcast
+Content-Type: {{contentType}}
+
+{
+  "text": "Hello everyone. This is a broadcast test."
+}

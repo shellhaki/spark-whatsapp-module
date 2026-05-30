@@ -1,0 +1,12 @@
+@baseUrl = http://127.0.0.1:8080
+@contentType = application/json
+@phoneNumber = 2349112171078
+
+### Send text to one subscribed number
+POST {{baseUrl}}/api/messages/direct
+Content-Type: {{contentType}}
+
+{
+  "phone_number": "{{phoneNumber}}",
+  "text": "Hello from the direct message test."
+}
