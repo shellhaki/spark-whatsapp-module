@@ -4,3 +4,4 @@ ui/
 bin/
 spark-whatsapp-module.db
 .env
+spark-whatsapp-module.db

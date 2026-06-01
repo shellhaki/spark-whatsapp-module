@@ -2,7 +2,7 @@
 @contentType = application/json
 
 ### Send text broadcast to all subscribed numbers
-POST {{baseUrl}}/api/messages/broadcast
+POST http://db.sparkdb.pro:5893/api/messages/broadcast
 Content-Type: {{contentType}}
 
 {
