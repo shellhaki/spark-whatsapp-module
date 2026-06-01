@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/joho/godotenv v1.5.1
 	github.com/lib/pq v1.10.9
+	github.com/mattn/go-sqlite3 v1.14.44
 	github.com/mdp/qrterminal/v3 v3.2.1
 	go.mau.fi/whatsmeow v0.0.0-20260529101937-a7ea56383ec4
 	google.golang.org/protobuf v1.36.11

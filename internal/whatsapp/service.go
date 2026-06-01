@@ -32,7 +32,7 @@ type Service struct {
 func NewService(ctx context.Context, cfg config.Config, db *sql.DB, repo *subscribers.Repository) (*Service, error) {
 	sqlstore.PostgresArrayWrapper = pq.Array
 
-	container := sqlstore.NewWithDB(db, "postgres", waLog.Noop)
+	container := sqlstore.NewWithDB(db, "sqlite3", waLog.Noop)
 	if err := container.Upgrade(ctx); err != nil {
 		return nil, fmt.Errorf("upgrade whatsapp sql store: %w", err)
 	}

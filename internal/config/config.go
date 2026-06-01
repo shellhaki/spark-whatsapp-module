@@ -12,6 +12,7 @@ import (
 
 type Config struct {
 	PostgresURI     string
+	SQLitePath      string
 	HTTPAddress     string
 	ShutdownTimeout time.Duration
 	SubscribeWord   string
@@ -47,6 +48,7 @@ func Load() (Config, error) {
 
 	cfg := Config{
 		PostgresURI:     os.Getenv("POSTGRES_URI"),
+		SQLitePath:      envOrDefault("SQLITE_PATH", "spark-whatsapp-module.db"),
 		HTTPAddress:     envOrDefault("HTTP_ADDRESS", ":8080"),
 		ShutdownTimeout: 10 * time.Second,
 		SubscribeWord:   envOrDefault("WHATSAPP_SUBSCRIBE_WORD", "subscribe"),
@@ -57,11 +59,13 @@ func Load() (Config, error) {
 		DBConnMaxLife:   dbConnMaxLife,
 	}
 
-	if cfg.PostgresURI == "" {
-		return Config{}, fmt.Errorf("POSTGRES_URI is required")
+	if cfg.SQLitePath == "" {
+		return Config{}, fmt.Errorf("SQLITE_PATH is required")
 	}
 
-	cfg.PostgresURI = normalizePostgresURI(cfg.PostgresURI)
+	if cfg.PostgresURI != "" {
+		cfg.PostgresURI = normalizePostgresURI(cfg.PostgresURI)
+	}
 
 	return cfg, nil
 }

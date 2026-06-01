@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"log"
 	"net/http"
 	"os"
@@ -25,24 +26,44 @@ func main() {
 		log.Fatal(err)
 	}
 
-	db, err := database.Open(ctx, cfg.PostgresURI, database.PoolOptions{
-		MaxOpenConns:    cfg.DBMaxOpenConns,
-		MaxIdleConns:    cfg.DBMaxIdleConns,
+	sqliteDB, err := database.OpenSQLite(ctx, cfg.SQLitePath, database.PoolOptions{
+		MaxOpenConns:    1,
+		MaxIdleConns:    1,
 		ConnMaxIdleTime: cfg.DBConnMaxIdle,
 		ConnMaxLifetime: cfg.DBConnMaxLife,
 	})
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close()
+	defer sqliteDB.Close()
 
-	if err := database.Setup(ctx, db); err != nil {
+	if err := database.SetupSQLite(ctx, sqliteDB); err != nil {
 		log.Fatal(err)
 	}
 
-	repo := subscribers.NewRepository(db)
+	var postgresDB *sql.DB
+	if cfg.PostgresURI != "" {
+		postgresDB, err = database.OpenPostgres(ctx, cfg.PostgresURI, database.PoolOptions{
+			MaxOpenConns:    cfg.DBMaxOpenConns,
+			MaxIdleConns:    cfg.DBMaxIdleConns,
+			ConnMaxIdleTime: cfg.DBConnMaxIdle,
+			ConnMaxLifetime: cfg.DBConnMaxLife,
+		})
+		if err != nil {
+			log.Printf("postgres backup disabled: %v", err)
+		} else {
+			defer postgresDB.Close()
+			if err := database.SetupPostgres(ctx, postgresDB); err != nil {
+				log.Printf("postgres backup setup failed: %v", err)
+				postgresDB.Close()
+				postgresDB = nil
+			}
+		}
+	}
 
-	whatsAppService, err := whatsapp.NewService(ctx, cfg, db, repo)
+	repo := subscribers.NewRepository(sqliteDB, postgresDB)
+
+	whatsAppService, err := whatsapp.NewService(ctx, cfg, sqliteDB, repo)
 	if err != nil {
 		log.Fatal(err)
 	}

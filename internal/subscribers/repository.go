@@ -23,17 +23,42 @@ type Subscriber struct {
 }
 
 type Repository struct {
-	db *sql.DB
+	primary   *sql.DB
+	backup    *sql.DB
+	logPrefix string
 }
 
-func NewRepository(db *sql.DB) *Repository {
-	return &Repository{db: db}
+func NewRepository(primary *sql.DB, backup *sql.DB) *Repository {
+	return &Repository{
+		primary:   primary,
+		backup:    backup,
+		logPrefix: "[SUBSCRIBERS]",
+	}
 }
 
 func (r *Repository) Subscribe(ctx context.Context, jid, phoneNumber, pushName string) error {
 	phoneNumber = NormalizePhoneNumber(phoneNumber)
 
-	query := `
+	primaryQuery := `
+INSERT INTO whatsapp_subscribers (
+    jid,
+    phone_number,
+    push_name,
+    subscribed,
+    subscribed_at,
+    unsubscribed_at,
+    updated_at
+) VALUES (?, ?, ?, TRUE, CURRENT_TIMESTAMP, NULL, CURRENT_TIMESTAMP)
+ON CONFLICT (jid) DO UPDATE
+SET phone_number = EXCLUDED.phone_number,
+    push_name = EXCLUDED.push_name,
+    subscribed = TRUE,
+    subscribed_at = CURRENT_TIMESTAMP,
+    unsubscribed_at = NULL,
+    updated_at = CURRENT_TIMESTAMP
+`
+
+	backupQuery := `
 INSERT INTO whatsapp_subscribers (
     jid,
     phone_number,
@@ -52,18 +77,23 @@ SET phone_number = EXCLUDED.phone_number,
     updated_at = NOW()
 `
 
-	if _, err := r.db.ExecContext(ctx, query, jid, phoneNumber, pushName); err != nil {
+	if _, err := r.primary.ExecContext(ctx, primaryQuery, jid, phoneNumber, pushName); err != nil {
 		return fmt.Errorf("subscribe jid %s: %w", jid, err)
 	}
+
+	r.runBackup("subscribe", func() error {
+		_, err := r.backup.ExecContext(context.Background(), backupQuery, jid, phoneNumber, pushName)
+		return err
+	})
 
 	return nil
 }
 
 func (r *Repository) IsActive(ctx context.Context, jid string) (bool, error) {
-	row := r.db.QueryRowContext(ctx, `
+	row := r.primary.QueryRowContext(ctx, `
 SELECT subscribed
 FROM whatsapp_subscribers
-WHERE jid = $1
+WHERE jid = ?
 LIMIT 1
 `, jid)
 
@@ -79,7 +109,15 @@ LIMIT 1
 }
 
 func (r *Repository) Unsubscribe(ctx context.Context, jid string) (bool, error) {
-	query := `
+	primaryQuery := `
+UPDATE whatsapp_subscribers
+SET subscribed = FALSE,
+    unsubscribed_at = CURRENT_TIMESTAMP,
+    updated_at = CURRENT_TIMESTAMP
+WHERE jid = ? AND subscribed = TRUE
+`
+
+	backupQuery := `
 UPDATE whatsapp_subscribers
 SET subscribed = FALSE,
     unsubscribed_at = NOW(),
@@ -87,7 +125,7 @@ SET subscribed = FALSE,
 WHERE jid = $1 AND subscribed = TRUE
 `
 
-	result, err := r.db.ExecContext(ctx, query, jid)
+	result, err := r.primary.ExecContext(ctx, primaryQuery, jid)
 	if err != nil {
 		return false, fmt.Errorf("unsubscribe jid %s: %w", jid, err)
 	}
@@ -97,11 +135,16 @@ WHERE jid = $1 AND subscribed = TRUE
 		return false, fmt.Errorf("unsubscribe jid %s rows affected: %w", jid, err)
 	}
 
+	r.runBackup("unsubscribe", func() error {
+		_, err := r.backup.ExecContext(context.Background(), backupQuery, jid)
+		return err
+	})
+
 	return rowsAffected > 0, nil
 }
 
 func (r *Repository) ListActive(ctx context.Context) ([]Subscriber, error) {
-	rows, err := r.db.QueryContext(ctx, `
+	rows, err := r.primary.QueryContext(ctx, `
 SELECT jid, phone_number, push_name, subscribed, subscribed_at, unsubscribed_at, updated_at
 FROM whatsapp_subscribers
 WHERE subscribed = TRUE
@@ -139,10 +182,10 @@ ORDER BY subscribed_at ASC
 func (r *Repository) FindActiveByPhoneNumber(ctx context.Context, phoneNumber string) (Subscriber, error) {
 	phoneNumber = NormalizePhoneNumber(phoneNumber)
 
-	row := r.db.QueryRowContext(ctx, `
+	row := r.primary.QueryRowContext(ctx, `
 SELECT jid, phone_number, push_name, subscribed, subscribed_at, unsubscribed_at, updated_at
 FROM whatsapp_subscribers
-WHERE phone_number = $1 AND subscribed = TRUE
+WHERE phone_number = ? AND subscribed = TRUE
 LIMIT 1
 `, phoneNumber)
 
@@ -177,4 +220,16 @@ func NormalizePhoneNumber(value string) string {
 	}
 
 	return builder.String()
+}
+
+func (r *Repository) runBackup(action string, fn func() error) {
+	if r.backup == nil {
+		return
+	}
+
+	go func() {
+		if err := fn(); err != nil {
+			fmt.Printf("%s backup %s failed: %v\n", r.logPrefix, action, err)
+		}
+	}()
 }

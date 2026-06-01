@@ -1,3 +1,6 @@
 bot
 sessions.db
 ui/
+bin/
+spark-whatsapp-module.db
+.env
